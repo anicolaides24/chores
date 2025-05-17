@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Add Task</title>
+  <link rel="stylesheet" href="styles/addtask.css">
+  <style>
+    .hidden { display: none; }
+  </style>
+
+  <!-- Firebase SDKs -->
+<script src="https://www.gstatic.com/firebasejs/10.11.0/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.11.0/firebase-firestore.js"></script>
+
+<script type="module">
+  // Modular Firebase SDK (v10+)
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.11.0/firebase-app.js";
+  import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.11.0/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyAm1XXxZXzAPwetV1La4Sk2xy0YYuFkleM",
+    authDomain: "chores-app-21f03.firebaseapp.com",
+    projectId: "chores-app-21f03",
+    storageBucket: "chores-app-21f03.appspot.com",
+    messagingSenderId: "606911154319",
+    appId: "1:606911154319:web:e4e6f66e01dee02d6748fa"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+
+  // Expose db globally by attaching to window
+  window.db = db;
+  window.addDoc = addDoc;
+  window.collection = collection;
+  window.serverTimestamp = serverTimestamp;
+</script>
+
+</head>
+
+<!-- Form Structure-->
+<!----------------------------------------->
+
+<body>
+
+  <header class="top">
+    <div class="title">
+      <div id="title01"><a href="index.html"> Sim Sim Tracker</a>
+  		</div>
+    </div>
+    <div class="navbar">
+      <div id="addTask"><a href="addtask.html">Add Tasks</a>
+      </div>
+      <div id="calendar"><a href="calendar.html">Calendar View</a>
+      </div>
+    </div>
+</header>
+
+  <h1>Add a New Task</h1>
+  <form id="taskForm">
+    <label>Task Name:* <input type="text" name="task" required></label><br><br>
+
+    <label>Person:*
+      <select name="person" required>
+        <option value="">Select</option>
+        <option value="Alkis">Alkis</option>
+        <option value="Simone">Simone</option>
+      </select>
+    </label><br><br>
+
+    <label>Frequency:*
+      <select name="frequency" id="frequency" required>
+        <option value="Once Off">Once Off</option>
+        <option value="Daily">Daily</option>
+        <option value="Weekly">Weekly</option>
+        <option value="Monthly">Monthly</option>
+        <option value="Yearly">Yearly</option>
+      </select>
+    </label><br><br>
+
+    <div id="everyX-group" class="hidden">
+      <label>Every: <input type="number" name="everyX" min="1">
+        <span id="everyX-unit"></span>
+      </label><br><br>
+    </div>
+
+    <label>Starting On:* <input type="date" name="startingOn" required></label><br><br>
+    <label>Ending On:* <input type="date" name="endingOn" required></label><br><br>
+
+    <button type="submit" class="button1" >Add Task</button>
+  </form>
+
+<!-- Form Script -->
+<!----------------------------------------->
+
+  <script>
+  /*Variables*/
+    const freqSelect = document.getElementById('frequency');
+    const everyGroup = document.getElementById('everyX-group');
+    const everyUnit = document.getElementById('everyX-unit');
+
+    /*Conditions*/
+    freqSelect.addEventListener('change', () => {
+      const val = freqSelect.value;
+      if (['Weekly', 'Monthly', 'Yearly'].includes(val)) {
+        everyGroup.classList.remove('hidden');
+        everyUnit.textContent = val === 'Weekly' ? 'week(s)' :
+                                val === 'Monthly' ? 'month(s)' :
+                                'year(s)';
+      } else {
+        everyGroup.classList.add('hidden');
+      }
+    });
+
+    /*Data Collection*/
+    document.getElementById('taskForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const data = new FormData(e.target);
+    const task = Object.fromEntries(data.entries());
+
+    const start = new Date(task.startingOn);
+    const end = new Date(task.endingOn);
+    if (end < start) {
+      alert('Ending date cannot be before Starting date.');
+      return;
+    }
+
+    try {
+      await addDoc(collection(db, "tasks"), {
+        task: task.task,
+        person: task.person,
+        frequency: task.frequency,
+        everyX: task.everyX || null,
+        startingOn: task.startingOn,
+        endingOn: task.endingOn,
+        createdAt: serverTimestamp(),
+        done: false
+      });
+
+      alert('Task saved to the cloud!');
+      e.target.reset();
+      everyGroup.classList.add('hidden');
+
+    } catch (err) {
+      console.error("Error saving task:", err);
+      alert('Failed to save task.');
+    }
+  });
+    /*
+    document.getElementById('taskForm').addEventListener('submit', function(e) {
+      e.preventDefault();
+      const data = new FormData(e.target);
+      const task = Object.fromEntries(data.entries());
+
+      const start = new Date(task.startingOn);
+      const end = new Date(task.endingOn);
+      if (end < start) {
+        alert('Ending date cannot be before Starting date.');
+        return;
+      }
+
+      task.id = Date.now();
+      const tasks = JSON.parse(localStorage.getItem('tasks') || '[]');
+      tasks.push(task);
+      localStorage.setItem('tasks', JSON.stringify(tasks));
+
+      alert('Task saved locally in your browser.');
+      e.target.reset();
+      everyGroup.classList.add('hidden');
+    });*/
+  </script>
+
+</body>
+</html>

@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Chores App - Today</title>
+  <link rel="stylesheet" href="styles/home.css">
+
+  <!-- Firebase SDKs -->
+<script src="https://www.gstatic.com/firebasejs/10.11.0/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.11.0/firebase-firestore.js"></script>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.11.0/firebase-app.js";
+  import { getFirestore, collection, addDoc, serverTimestamp, query, where, onSnapshot, doc, updateDoc} from "https://www.gstatic.com/firebasejs/10.11.0/firebase-firestore.js";
+
+  let useGroupedView = false;
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyAm1XXxZXzAPwetV1La4Sk2xy0YYuFkleM",
+    authDomain: "chores-app-21f03.firebaseapp.com",
+    projectId: "chores-app-21f03",
+    storageBucket: "chores-app-21f03.appspot.com",
+    messagingSenderId: "606911154319",
+    appId: "1:606911154319:web:e4e6f66e01dee02d6748fa"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+
+  // Expose db globally by attaching to window
+  window.db = db;
+  window.addDoc = addDoc;
+  window.collection = collection;
+  window.serverTimestamp = serverTimestamp;
+// Make sure db is initialized somewhere in your app
+// const db = getFirestore(firebaseApp); // Assuming firebaseApp is your initialized app
+
+const taskList = document.getElementById('task-list');
+
+// ✅ Get today's date in YYYY-MM-DD format
+const today = new Date().toISOString().split('T')[0];
+
+function renderTasks(tasksToday) {
+  if (tasksToday.length === 0) {
+    taskList.innerHTML = "<p>No tasks scheduled for today.</p>";
+    return;
+  }
+
+  let html = `
+    <table>
+      <thead>
+        <tr><th>Task</th><th>Person</th><th>Starting on</th><th>Ending on</th><th>Frequency</th><th>Status</th></tr>
+      </thead>
+      <tbody>
+  `;
+
+  tasksToday.forEach((task) => {
+     const isDone = task.done === true;
+    // You might want to include the task's Firestore document ID here
+    // for operations like marking it complete later. task.id would be available if you map it.
+    html += `
+      <tr style="text-decoration: ${isDone ? 'line-through' : 'none'}; opacity: ${isDone ? '0.5' : '1'}">
+        <td><strong>${task.task}</strong></td>
+        <td>${task.person}</td>
+        <td>${task.startingOn}</td>
+        <td>${task.endingOn}</td>
+        <td>${task.frequency}</td>
+        <td><input type="checkbox" onchange="toggleStrikeAndSave(this)" class="status" data-id="${task.id}" ${isDone ? 'checked' : ''} /></td>
+      </tr>
+    `;
+  });
+
+  html += "</tbody></table>";
+  taskList.innerHTML = html;
+}
+
+window.toggleStrikeAndSave = async function (checkbox) {
+    const row = checkbox.closest('tr');
+    const docId = checkbox.dataset.id;
+    const isChecked = checkbox.checked;
+
+    // Strike through row
+    row.style.textDecoration = isChecked ? 'line-through' : 'none';
+    row.style.opacity = isChecked ? '0.5' : '1';
+
+    // Update Firestore
+    try {
+      const taskRef = doc(db, "tasks", docId);
+      await updateDoc(taskRef, {
+        done: isChecked
+      });
+      console.log("Task updated successfully.");
+    } catch (error) {
+      console.error("Failed to update task:", error);
+      alert("Failed to update task status.");
+    }
+  };
+
+  function shouldShowTask(task, todayDateStr) {
+
+    document.getElementById('task-list').parentElement.style.display = 'table';
+    document.getElementById('task-columns').style.display = 'none';
+  const today = new Date(todayDateStr);
+
+  // Handle Firestore Timestamp or string
+  const start = new Date(task.startingOn?.toDate ? task.startingOn.toDate() : task.startingOn);
+  const end = new Date(task.endingOn?.toDate ? task.endingOn.toDate() : task.endingOn);
+
+  const frequency = task.frequency || "once";
+  const every = parseInt(task.everyX || 1, 10);
+
+  const diffInDays = Math.floor((today - start) / (1000 * 60 * 60 * 24));
+
+  if (frequency === 'Once Off') {
+    return today >= start && today <= end;
+  }
+
+  if (frequency === 'Daily') {
+    return today >= start && (diffInDays % every === 0);
+  }
+
+  if (frequency === 'Weekly') {
+    const diffInWeeks = Math.floor(diffInDays / 7);
+    return today >= start && (diffInWeeks % every === 0);
+  }
+
+  if (frequency === 'Monthly') {
+    const diffInMonths = (today.getFullYear() - start.getFullYear()) * 12 +
+                         (today.getMonth() - start.getMonth());
+    return today >= start &&
+           today.getDate() === start.getDate() &&
+           (diffInMonths % every === 0);
+  }
+  if (frequency === 'Yearly') {
+    const diffInYears = today.getFullYear() - start.getFullYear();
+    return today >= start &&
+           today.getMonth() === start.getMonth() &&
+           today.getDate() === start.getDate() &&
+           (diffInYears % every === 0);
+  }
+  return false;
+}
+
+// Set up the real-time listener
+// We define the query first
+//const q = query(collection(db, "tasks"), where("startingOn", "==", today));
+
+// Then we listen for snapshot changes
+const unsubscribe = onSnapshot(collection(db, "tasks"), (querySnapshot) => {
+  const tasksToday = [];
+  querySnapshot.forEach((docSnap) => {
+    const task = { id: docSnap.id, ...docSnap.data() };
+    if (shouldShowTask(task, today)) {
+      tasksToday.push(task);
+    }
+  });
+
+  if (useGroupedView) {
+  renderTasksGroupedByPerson(tasksToday);
+} else {
+  renderTasks(tasksToday);
+}
+
+}, (error) => {
+  console.error("Error fetching tasks:", error);
+  taskList.innerHTML = `<p>Error loading tasks: ${error.message}</p>`;
+});
+// Remember to unsubscribe when you no longer need the listener
+// For example, if this component is removed from the page.
+// unsubscribe();
+
+
+
+function renderTasksGroupedByPerson(tasksToday) {
+
+  document.getElementById('task-list').parentElement.style.display = 'none';
+  document.getElementById('task-columns').style.display = 'flex';
+  const container = document.getElementById('task-columns');
+  container.innerHTML = ''; // Clear previous content
+
+
+
+  // Group tasks by person
+  const grouped = {};
+  tasksToday.forEach(task => {
+    if (!grouped[task.person]) {
+      grouped[task.person] = [];
+    }
+    grouped[task.person].push(task);
+  });
+
+  // Create columns
+  for (const person in grouped) {
+    const column = document.createElement('div');
+    column.className = 'task-column';
+
+    const title = document.createElement('h2');
+    title.textContent = person;
+    column.appendChild(title);
+
+    grouped[person].forEach(task => {
+      const taskDiv = document.createElement('div');
+      taskDiv.className = `task-item${task.done ? ' done' : ''}`;
+      taskDiv.innerHTML = `
+        <strong>${task.task}</strong><br>
+        <label>
+          Done:
+          <input type="checkbox" class="status" data-id="${task.id}" ${task.done ? 'checked' : ''} />
+        </label>
+      `;
+      column.appendChild(taskDiv);
+    });
+
+    container.appendChild(column);
+  }
+
+  // Hook up checkbox listeners
+  document.querySelectorAll('.status').forEach(checkbox => {
+    checkbox.addEventListener('change', function () {
+      toggleStrikeAndSave(this);
+    });
+  });
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  const toggleBtn = document.getElementById('toggle-view-btn');
+  toggleBtn.addEventListener('click', () => {
+    useGroupedView = !useGroupedView;
+    toggleBtn.textContent = useGroupedView ? 'Switch to List View' : 'Switch to Grouped View';
+
+    // Re-fetch and re-render tasks
+    onSnapshot(collection(db, "tasks"), (querySnapshot) => {
+      const tasksToday = [];
+      querySnapshot.forEach((docSnap) => {
+        const task = { id: docSnap.id, ...docSnap.data() };
+        if (shouldShowTask(task, today)) {
+          tasksToday.push(task);
+        }
+      });
+
+      if (useGroupedView) {
+        renderTasksGroupedByPerson(tasksToday);
+      } else {
+        renderTasks(tasksToday);
+      }
+    });
+  });
+});
+
+</script>
+
+</head>
+
+<body>
+  <header class="top">
+    <div class="title">
+      <div id="title01"><a href="index.html"> Sim Sim Tracker</a>
+  		</div>
+    </div>
+    <div class="navbar">
+      <div id="addTask"><a href="addtask.html">Add Tasks</a>
+      </div>
+      <div id="calendar"><a href="calendar.html">Calendar View</a>
+      </div>
+    </div>
+</header>
+  <h1>Today's Tasks</h1> <time id="current-time"></time>
+  <div>
+<button id="toggle-view-btn">Switch to Grouped View</button>
+</div>
+<div id="task-columns" class="columns-container"></div>
+      <table id="task-table">
+      <!--<thead>
+        <tr>
+          <th>Task</th>
+          <th>Person</th>
+          <th>Done</th>
+        </tr>
+      </thead>
+    -->
+        <tbody id="task-list"></tbody>
+    </table>
+
+<!--<script src="js/tasks.js"></script>-->
+
+<!--Strikehrough Done--
+<script>
+  function toggleStrike(checkbox) {
+    const row = checkbox.closest("tr");
+    if (checkbox.checked) {
+      row.classList.add("struck");
+    } else {
+      row.classList.remove("struck");
+    }
+  }
+</script>-->
+
+<!--Current Date and Time-->
+<script>
+  function updateTime() {
+    const now = new Date();
+    const timeElement = document.getElementById('current-time');
+
+    const dateOptions = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+    const dateString = now.toLocaleDateString(undefined, dateOptions);
+    const timeString = now.toLocaleTimeString();
+
+    timeElement.dateTime = now.toISOString();
+    timeElement.innerHTML = `
+      <span class="date">${dateString}</span>
+      <span class="label"> - </span>
+      <span class="time">${timeString}</span>
+    `;
+  }
+
+  setInterval(updateTime, 1000);
+  updateTime();
+</script>
+
+</body>
+</html>
